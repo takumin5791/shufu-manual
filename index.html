@@ -24,7 +24,8 @@
     --accent:#6fc0a5; --accent-soft:#1d2a26; --warn:#e0a077; --warn-soft:#2b211a;
     --shadow:0 1px 2px rgba(0,0,0,.3),0 4px 16px rgba(0,0,0,.25);}
 }
-*{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+*{box-sizing:border-box; -webkit-tap-highlight-color:rgba(31,111,92,.15); touch-action:manipulation}
+button,.card-h,.chk{cursor:pointer}
 html,body{margin:0;padding:0}
 body{
   background:var(--bg); color:var(--ink);
@@ -247,6 +248,7 @@ table.ing td:last-child{text-align:right;color:var(--sub);white-space:nowrap;pad
 
     <div class="wrap note" style="padding-bottom:10px">
       チェックの状態はページを閉じると消えます（毎日リセットされる前提の設計です）。分量・時間は目安なので、味を見ながら調整してください。
+      <div id="diag" style="margin-top:8px;opacity:.7">読み込み中…（この行が「読み込み中…」のままなら、うまく動いていません）</div>
     </div>
   </main>
 </div>
@@ -946,168 +948,234 @@ const FIRST3 = [
 const SHOP_QUICK = ["卵","牛乳","食パン","米","玉ねぎ","にんじん","じゃがいも","キャベツ","豚こま","鶏もも","豆腐","納豆","冷凍うどん","ティッシュ","トイレットペーパー","洗剤","ゴミ袋","シャンプー"];
 
 /* ========== アプリ ========== */
-const PAGES=[
+var PAGES=[
  {id:"today", ic:"☀️", label:"今日"},
  {id:"chores", ic:"🧺", label:"家事"},
  {id:"cook", ic:"🍳", label:"料理"},
  {id:"trouble", ic:"🆘", label:"困った"},
  {id:"life", ic:"📋", label:"事務"}
 ];
-const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
-const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function $(s){return document.querySelector(s)}
+function $$(s){var r=[],n=document.querySelectorAll(s);for(var i=0;i<n.length;i++)r.push(n[i]);return r}
+function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})}
+function merge(a,b){var o={},k;for(k in a)o[k]=a[k];for(k in b)o[k]=b[k];return o}
+
+function showErr(msg){
+  var d=document.getElementById("errbar");
+  if(!d){d=document.createElement("div");d.id="errbar";document.body.appendChild(d)}
+  d.style.cssText="position:fixed;left:0;right:0;top:0;z-index:9999;background:#b3261e;color:#fff;font:13px/1.5 sans-serif;padding:10px 12px;white-space:pre-wrap";
+  d.textContent="エラー: "+msg;
+}
+window.onerror=function(m,src,l,c){showErr(m+"  (行 "+l+":"+c+")");};
 
 /* nav */
 function buildNav(){
-  $("#botnav").innerHTML = PAGES.map(p=>`<button data-go="${p.id}"><span class="ic">${p.ic}</span>${p.label}</button>`).join("");
-  $("#sidenav").innerHTML = PAGES.map(p=>`<button data-go="${p.id}">${p.ic}　${p.label}</button>`).join("");
-  $$("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
+  var bot="",side="",i;
+  for(i=0;i<PAGES.length;i++){
+    bot+='<button type="button" data-go="'+PAGES[i].id+'"><span class="ic">'+PAGES[i].ic+'</span>'+PAGES[i].label+'</button>';
+    side+='<button type="button" data-go="'+PAGES[i].id+'">'+PAGES[i].ic+'　'+PAGES[i].label+'</button>';
+  }
+  $("#botnav").innerHTML=bot; $("#sidenav").innerHTML=side;
 }
 function go(id){
-  $$("section.page").forEach(s=>s.classList.toggle("on", s.dataset.p===id));
-  $$("[data-go]").forEach(b=>b.classList.toggle("on", b.dataset.go===id));
-  window.scrollTo({top:0});
+  var s=$$("section.page"),i;
+  for(i=0;i<s.length;i++) s[i].className = "page"+(s[i].getAttribute("data-p")===id?" on":"");
+  var b=$$("[data-go]");
+  for(i=0;i<b.length;i++) b[i].className = (b[i].getAttribute("data-go")===id?"on":"");
+  window.scrollTo(0,0);
   if(id!=="search") $("#q").value="";
 }
 
 /* card builder */
 function cardHTML(o){
-  const badges = [o.freq?`<span class="badge">${esc(o.freq)}</span>`:"", o.time?`<span class="badge">⏱ ${esc(o.time)}</span>`:""].join("");
-  const metas = (o.meta||[]).map(m=>`<span class="badge">${esc(m)}</span>`).join("");
-  const ing = (o.ing&&o.ing.length)?`<table class="ing">${o.ing.map(r=>`<tr><td>${esc(r[0])}</td><td>${esc(r[1]||"")}</td></tr>`).join("")}</table>`:"";
-  const steps = o.steps?`<ol class="steps">${o.steps.map(s=>`<li>${esc(s)}</li>`).join("")}</ol>`:"";
-  const tip = o.tips?`<div class="tip"><b>コツ</b>${esc(o.tips)}</div>`:"";
-  const ng = o.ng?`<div class="ng"><b>やりがちな失敗</b>${esc(o.ng)}</div>`:"";
-  return `<div class="card"><div class="card-h"><span class="emo">${o.emo||"•"}</span><div class="tt"><b>${esc(o.title)}</b><small>${esc(o.sub||o.cat||"")}</small></div><span class="arw">▶</span></div>
-  <div class="card-b">${badges}${metas}${ing}${steps}${tip}${ng}</div></div>`;
-}
-function bindCards(root){
-  root.querySelectorAll(".card-h").forEach(h=>h.onclick=()=>h.parentElement.classList.toggle("open"));
+  var h='<div class="card"><div class="card-h"><span class="emo">'+(o.emo||"•")+'</span><div class="tt"><b>'+esc(o.title)+'</b><small>'+esc(o.sub||o.cat||"")+'</small></div><span class="arw">▶</span></div><div class="card-b">';
+  if(o.freq) h+='<span class="badge">'+esc(o.freq)+'</span>';
+  if(o.time) h+='<span class="badge">⏱ '+esc(o.time)+'</span>';
+  var i;
+  if(o.meta) for(i=0;i<o.meta.length;i++) h+='<span class="badge">'+esc(o.meta[i])+'</span>';
+  if(o.ing&&o.ing.length){ h+='<table class="ing">';
+    for(i=0;i<o.ing.length;i++) h+='<tr><td>'+esc(o.ing[i][0])+'</td><td>'+esc(o.ing[i][1]||"")+'</td></tr>';
+    h+='</table>'; }
+  if(o.steps){ h+='<ol class="steps">';
+    for(i=0;i<o.steps.length;i++) h+='<li>'+esc(o.steps[i])+'</li>';
+    h+='</ol>'; }
+  if(o.tips) h+='<div class="tip"><b>コツ</b>'+esc(o.tips)+'</div>';
+  if(o.ng) h+='<div class="ng"><b>やりがちな失敗</b>'+esc(o.ng)+'</div>';
+  return h+'</div></div>';
 }
 
 /* chores */
-let choreFilter="すべて";
+var choreFilter="すべて";
 function renderChores(){
-  const cats=["すべて",...new Set(CHORES.map(c=>c.cat))];
-  $("#chorePills").innerHTML=cats.map(c=>`<button class="${c===choreFilter?"on":""}" data-c="${c}">${c}</button>`).join("");
-  $$("#chorePills button").forEach(b=>b.onclick=()=>{choreFilter=b.dataset.c;renderChores();});
-  const list=CHORES.filter(c=>choreFilter==="すべて"||c.cat===choreFilter);
-  const el=$("#choreList"); el.innerHTML=list.map(c=>cardHTML({...c,sub:`${c.cat}・${c.freq}`})).join("");
-  bindCards(el);
+  var cats=["すべて"],seen={},i;
+  for(i=0;i<CHORES.length;i++) if(!seen[CHORES[i].cat]){seen[CHORES[i].cat]=1;cats.push(CHORES[i].cat)}
+  var p="";
+  for(i=0;i<cats.length;i++) p+='<button type="button" class="'+(cats[i]===choreFilter?"on":"")+'" data-cf="'+cats[i]+'">'+cats[i]+'</button>';
+  $("#chorePills").innerHTML=p;
+  var out="";
+  for(i=0;i<CHORES.length;i++){
+    var c=CHORES[i];
+    if(choreFilter==="すべて"||c.cat===choreFilter) out+=cardHTML(merge(c,{sub:c.cat+"・"+c.freq}));
+  }
+  $("#choreList").innerHTML=out;
 }
 
 /* recipes */
-let cookFilter="all";
-const LVNAME={0:"基本",1:"レベル1 かんたん",2:"レベル2 定番",3:"レベル3 作り置き"};
+var cookFilter="all";
+var LVNAME={0:"基本",1:"レベル1 かんたん",2:"レベル2 定番",3:"レベル3 作り置き"};
 function renderCook(){
-  const opts=[["all","すべて"],[0,"⭐ 基本"],[1,"レベル1 15分"],[2,"レベル2 定番"],[3,"レベル3 作り置き"]];
-  $("#cookPills").innerHTML=opts.map(o=>`<button class="${String(o[0])===String(cookFilter)?"on":""}" data-l="${o[0]}">${o[1]}</button>`).join("");
-  $$("#cookPills button").forEach(b=>b.onclick=()=>{cookFilter=b.dataset.l==="all"?"all":Number(b.dataset.l);renderCook();});
-  const list=RECIPES.filter(r=>cookFilter==="all"||r.lv===cookFilter);
-  const el=$("#cookList"); el.innerHTML=list.map(r=>cardHTML({...r,sub:LVNAME[r.lv]})).join("");
-  bindCards(el);
+  var opts=[["all","すべて"],["0","⭐ 基本"],["1","レベル1 15分"],["2","レベル2 定番"],["3","レベル3 作り置き"]],p="",i;
+  for(i=0;i<opts.length;i++) p+='<button type="button" class="'+(opts[i][0]===cookFilter?"on":"")+'" data-lf="'+opts[i][0]+'">'+opts[i][1]+'</button>';
+  $("#cookPills").innerHTML=p;
+  var out="";
+  for(i=0;i<RECIPES.length;i++){
+    var r=RECIPES[i];
+    if(cookFilter==="all"||String(r.lv)===cookFilter) out+=cardHTML(merge(r,{sub:LVNAME[r.lv]}));
+  }
+  $("#cookList").innerHTML=out;
 }
 
 /* trouble & life */
 function renderStatic(){
-  const t=$("#troubleList"); t.innerHTML=TROUBLE.map(o=>cardHTML(o)).join(""); bindCards(t);
-  const l=$("#lifeList");
-  l.innerHTML='<h2 class="sec">定期的にやること</h2>'+LIFE.map(o=>cardHTML(o)).join(""); bindCards(l);
-  $("#firstThree").innerHTML=FIRST3.map(f=>`<div class="card open"><div class="card-b" style="display:block;border-top:none;padding:13px 14px"><b>${f.emo} ${esc(f.t)}</b><div style="font-size:14px;color:var(--sub);margin-top:4px">${esc(f.d)}</div></div></div>`).join("");
+  var i,t="";
+  for(i=0;i<TROUBLE.length;i++) t+=cardHTML(TROUBLE[i]);
+  $("#troubleList").innerHTML=t;
+  var l='<h2 class="sec">定期的にやること</h2>';
+  for(i=0;i<LIFE.length;i++) l+=cardHTML(LIFE[i]);
+  $("#lifeList").innerHTML=l;
+  var f="";
+  for(i=0;i<FIRST3.length;i++) f+='<div class="card open"><div class="card-b" style="display:block;border-top:none;padding:13px 14px"><b>'+FIRST3[i].emo+' '+esc(FIRST3[i].t)+'</b><div style="font-size:14px;color:var(--sub);margin-top:4px">'+esc(FIRST3[i].d)+'</div></div></div>';
+  $("#firstThree").innerHTML=f;
 }
 
 /* today */
-let dayIdx=new Date().getDay();
-const doneSet=new Set();
+var dayIdx=new Date().getDay();
+var done={};
 function renderToday(){
-  const now=new Date();
-  const wd=["日","月","火","水","木","金","土"][now.getDay()];
-  $("#todayDate").textContent=`${now.getFullYear()}年${now.getMonth()+1}月${now.getDate()}日（${wd}）`;
-  $("#todayTitle").textContent=ROUTINE[dayIdx].name+"のルーティン";
-  $("#dayPills").innerHTML=[0,1,2,3,4,5,6].map(i=>`<button class="${i===dayIdx?"on":""}" data-d="${i}">${ROUTINE[i].name}</button>`).join("");
-  $$("#dayPills button").forEach(b=>b.onclick=()=>{dayIdx=Number(b.dataset.d);renderToday();});
-  const items=ROUTINE[dayIdx].items;
-  $("#todayList").innerHTML=items.map((it,i)=>{
-    const k=dayIdx+"-"+i;
-    return `<label class="chk"><input type="checkbox" data-k="${k}" ${doneSet.has(k)?"checked":""}><span class="lb">${esc(it[0])}${it[1]?`<small>${esc(it[1])}</small>`:""}</span></label>`;
-  }).join("");
-  $$("#todayList input").forEach(c=>c.onchange=()=>{c.checked?doneSet.add(c.dataset.k):doneSet.delete(c.dataset.k);updateProg();});
+  var now=new Date(), wd=["日","月","火","水","木","金","土"][now.getDay()],i;
+  $("#todayDate").innerHTML=now.getFullYear()+"年"+(now.getMonth()+1)+"月"+now.getDate()+"日（"+wd+"）";
+  $("#todayTitle").innerHTML=ROUTINE[dayIdx].name+"のルーティン";
+  var p="";
+  for(i=0;i<7;i++) p+='<button type="button" class="'+(i===dayIdx?"on":"")+'" data-day="'+i+'">'+ROUTINE[i].name+'</button>';
+  $("#dayPills").innerHTML=p;
+  var items=ROUTINE[dayIdx].items,out="";
+  for(i=0;i<items.length;i++){
+    var k=dayIdx+"-"+i;
+    out+='<label class="chk"><input type="checkbox" data-tk="'+k+'"'+(done[k]?" checked":"")+'><span class="lb">'+esc(items[i][0])+(items[i][1]?'<small>'+esc(items[i][1])+'</small>':'')+'</span></label>';
+  }
+  $("#todayList").innerHTML=out;
   updateProg();
 }
 function updateProg(){
-  const items=ROUTINE[dayIdx].items, total=items.length;
-  let done=0; items.forEach((_,i)=>{if(doneSet.has(dayIdx+"-"+i))done++;});
-  const pct=total?Math.round(done/total*100):0;
-  $("#progBar").style.width=pct+"%";
-  $("#progTxt").textContent=done===total&&total>0?`✨ ${total}件すべて完了。おつかれさまでした。`:`${done} / ${total} 件 完了`;
+  var items=ROUTINE[dayIdx].items,total=items.length,d=0,i;
+  for(i=0;i<total;i++) if(done[dayIdx+"-"+i]) d++;
+  $("#progBar").style.width=(total?Math.round(d/total*100):0)+"%";
+  $("#progTxt").innerHTML=(d===total&&total>0)?("✨ "+total+"件すべて完了。おつかれさまでした。"):(d+" / "+total+" 件 完了");
 }
 
 /* timer */
-let tLeft=0,tId=null,actx=null;
-function fmt(s){return String(Math.floor(s/60)).padStart(2,"0")+":"+String(s%60).padStart(2,"0")}
+var tLeft=0,tId=null,actx=null;
+function fmt(s){var m=Math.floor(s/60),x=s%60;return (m<10?"0":"")+m+":"+(x<10?"0":"")+x}
 function beep(){
   try{ actx=actx||new (window.AudioContext||window.webkitAudioContext)();
-    [0,.35,.7].forEach(d=>{const o=actx.createOscillator(),g=actx.createGain();
+    [0,.35,.7].forEach(function(dl){var o=actx.createOscillator(),g=actx.createGain();
       o.connect(g);g.connect(actx.destination);o.frequency.value=880;
-      g.gain.setValueAtTime(.001,actx.currentTime+d);
-      g.gain.exponentialRampToValueAtTime(.25,actx.currentTime+d+.02);
-      g.gain.exponentialRampToValueAtTime(.001,actx.currentTime+d+.3);
-      o.start(actx.currentTime+d);o.stop(actx.currentTime+d+.32);});
+      g.gain.setValueAtTime(.001,actx.currentTime+dl);
+      g.gain.exponentialRampToValueAtTime(.25,actx.currentTime+dl+.02);
+      g.gain.exponentialRampToValueAtTime(.001,actx.currentTime+dl+.3);
+      o.start(actx.currentTime+dl);o.stop(actx.currentTime+dl+.32);});
   }catch(e){}
 }
 function startTimer(sec){
-  clearInterval(tId); tLeft=sec; $("#tdisp").textContent=fmt(tLeft);
-  tId=setInterval(()=>{ tLeft--; $("#tdisp").textContent=fmt(Math.max(tLeft,0));
-    if(tLeft<=0){clearInterval(tId);tId=null;beep();$("#tdisp").textContent="00:00";} },1000);
+  clearInterval(tId); tLeft=sec; $("#tdisp").innerHTML=fmt(tLeft);
+  tId=setInterval(function(){ tLeft--; $("#tdisp").innerHTML=fmt(tLeft>0?tLeft:0);
+    if(tLeft<=0){clearInterval(tId);tId=null;beep();} },1000);
 }
 
 /* shopping */
-const shop=[];
+var shop=[];
 function renderShop(){
-  const el=$("#shopList");
-  if(!shop.length){el.innerHTML='<div class="empty" style="padding:16px">まだ何もありません。下のボタンかテキスト欄から追加できます。</div>';return;}
-  el.innerHTML=shop.map((s,i)=>`<label class="chk"><input type="checkbox" data-i="${i}" ${s.done?"checked":""}><span class="lb">${esc(s.name)}</span></label>`).join("");
-  el.querySelectorAll("input").forEach(c=>c.onchange=()=>{shop[Number(c.dataset.i)].done=c.checked;});
+  if(!shop.length){$("#shopList").innerHTML='<div class="empty" style="padding:16px">まだ何もありません。下のボタンかテキスト欄から追加できます。</div>';return}
+  var out="",i;
+  for(i=0;i<shop.length;i++) out+='<label class="chk"><input type="checkbox" data-si="'+i+'"'+(shop[i].done?" checked":"")+'><span class="lb">'+esc(shop[i].name)+'</span></label>';
+  $("#shopList").innerHTML=out;
 }
 function addShop(name){
-  name=(name||"").trim(); if(!name)return;
-  if(!shop.some(s=>s.name===name)) shop.push({name,done:false});
-  renderShop();
+  name=(name||"").replace(/^\s+|\s+$/g,""); if(!name)return;
+  for(var i=0;i<shop.length;i++) if(shop[i].name===name) return;
+  shop.push({name:name,done:false}); renderShop();
 }
 
 /* search */
 function searchAll(term){
-  term=term.trim(); if(!term){go("today");return;}
-  const t=term.toLowerCase();
-  const pool=[
-    ...CHORES.map(o=>({...o,sub:"家事・"+o.cat})),
-    ...RECIPES.map(o=>({...o,sub:"料理・"+LVNAME[o.lv]})),
-    ...TROUBLE.map(o=>({...o,sub:"困ったとき"})),
-    ...LIFE.map(o=>({...o,sub:"暮らしの事務"}))
-  ];
-  const hits=pool.filter(o=>{
-    const blob=[o.title,o.cat,o.tips,o.ng,(o.steps||[]).join(" "),(o.ing||[]).map(r=>r.join(" ")).join(" "),(o.meta||[]).join(" ")].join(" ").toLowerCase();
-    return blob.includes(t);
-  });
-  const out=$("#searchOut");
-  out.innerHTML = hits.length
-    ? `<p class="lead">「${esc(term)}」の検索結果 ${hits.length}件</p>` + hits.map(o=>cardHTML(o)).join("")
-    : `<div class="empty">「${esc(term)}」は見つかりませんでした。<br>例：洗濯 / カビ / カレー / 冷凍 / ゴミ / 排水口</div>`;
-  bindCards(out);
-  $$("section.page").forEach(s=>s.classList.toggle("on", s.dataset.p==="search"));
-  $$("[data-go]").forEach(b=>b.classList.remove("on"));
+  term=(term||"").replace(/^\s+|\s+$/g,"");
+  if(!term){go("today");return}
+  var t=term.toLowerCase(),pool=[],i;
+  for(i=0;i<CHORES.length;i++) pool.push(merge(CHORES[i],{sub:"家事・"+CHORES[i].cat}));
+  for(i=0;i<RECIPES.length;i++) pool.push(merge(RECIPES[i],{sub:"料理・"+LVNAME[RECIPES[i].lv]}));
+  for(i=0;i<TROUBLE.length;i++) pool.push(merge(TROUBLE[i],{sub:"困ったとき"}));
+  for(i=0;i<LIFE.length;i++) pool.push(merge(LIFE[i],{sub:"暮らしの事務"}));
+  var hits=[],o,blob,j;
+  for(i=0;i<pool.length;i++){
+    o=pool[i]; blob=[o.title,o.cat||"",o.tips||"",o.ng||""].join(" ");
+    if(o.steps) blob+=" "+o.steps.join(" ");
+    if(o.ing) for(j=0;j<o.ing.length;j++) blob+=" "+o.ing[j][0]+" "+(o.ing[j][1]||"");
+    if(o.meta) blob+=" "+o.meta.join(" ");
+    if(blob.toLowerCase().indexOf(t)>=0) hits.push(o);
+  }
+  var out;
+  if(hits.length){ out='<p class="lead">「'+esc(term)+'」の検索結果 '+hits.length+'件</p>';
+    for(i=0;i<hits.length;i++) out+=cardHTML(hits[i]); }
+  else out='<div class="empty">「'+esc(term)+'」は見つかりませんでした。<br>例：洗濯 / カビ / カレー / 冷凍 / ゴミ / 排水口</div>';
+  $("#searchOut").innerHTML=out;
+  var s=$$("section.page");
+  for(i=0;i<s.length;i++) s[i].className="page"+(s[i].getAttribute("data-p")==="search"?" on":"");
+  var b=$$("[data-go]"); for(i=0;i<b.length;i++) b[i].className="";
+}
+
+/* ---- 1つのイベント委譲ですべて処理（スマホでも確実に動く） ---- */
+function onTap(e){
+  var el=e.target, hit=null, i=0;
+  while(el && el!==document.body && i<8){
+    if(el.getAttribute){
+      if(el.getAttribute("data-go")!=null){go(el.getAttribute("data-go"));return}
+      if(el.getAttribute("data-cf")!=null){choreFilter=el.getAttribute("data-cf");renderChores();return}
+      if(el.getAttribute("data-lf")!=null){cookFilter=el.getAttribute("data-lf");renderCook();return}
+      if(el.getAttribute("data-day")!=null){dayIdx=Number(el.getAttribute("data-day"));renderToday();return}
+      if(el.getAttribute("data-sec")!=null){startTimer(Number(el.getAttribute("data-sec")));return}
+      if(el.getAttribute("data-sq")!=null){addShop(el.getAttribute("data-sq"));return}
+      if(el.id==="tstop"){clearInterval(tId);tId=null;$("#tdisp").innerHTML="00:00";return}
+      if(el.id==="shopAdd"){addShop($("#shopIn").value);$("#shopIn").value="";return}
+      if(el.id==="shopClear"){var n=[];for(var k=0;k<shop.length;k++) if(!shop[k].done) n.push(shop[k]); shop=n; renderShop();return}
+      if(el.className&&String(el.className).indexOf("card-h")>=0){
+        var card=el.parentNode;
+        card.className = String(card.className).indexOf("open")>=0 ? "card" : "card open";
+        return;
+      }
+    }
+    el=el.parentNode; i++;
+  }
+}
+function onChange(e){
+  var t=e.target;
+  if(!t||!t.getAttribute) return;
+  if(t.getAttribute("data-tk")!=null){ done[t.getAttribute("data-tk")]=t.checked; updateProg(); }
+  if(t.getAttribute("data-si")!=null){ shop[Number(t.getAttribute("data-si"))].done=t.checked; }
 }
 
 /* init */
-buildNav(); renderChores(); renderCook(); renderStatic(); renderToday(); renderShop();
-go("today");
-$("#q").addEventListener("input",e=>searchAll(e.target.value));
-$$(".tmr button[data-sec]").forEach(b=>b.onclick=()=>startTimer(Number(b.dataset.sec)));
-$("#tstop").onclick=()=>{clearInterval(tId);tId=null;tLeft=0;$("#tdisp").textContent="00:00";};
-$("#shopAdd").onclick=()=>{addShop($("#shopIn").value);$("#shopIn").value="";};
-$("#shopIn").addEventListener("keydown",e=>{if(e.key==="Enter"){addShop(e.target.value);e.target.value="";}});
-$("#shopQuick").innerHTML=SHOP_QUICK.map(s=>`<button data-s="${s}">＋ ${s}</button>`).join("");
-$$("#shopQuick button").forEach(b=>b.onclick=()=>addShop(b.dataset.s));
-$("#shopClear").onclick=()=>{for(let i=shop.length-1;i>=0;i--) if(shop[i].done) shop.splice(i,1); renderShop();};
+try{
+  buildNav(); renderChores(); renderCook(); renderStatic(); renderToday(); renderShop();
+  var q="",i;
+  for(i=0;i<SHOP_QUICK.length;i++) q+='<button type="button" data-sq="'+SHOP_QUICK[i]+'">＋ '+SHOP_QUICK[i]+'</button>';
+  $("#shopQuick").innerHTML=q;
+  go("today");
+  document.addEventListener("click", onTap, false);
+  document.addEventListener("change", onChange, false);
+  $("#q").addEventListener("input",function(e){searchAll(e.target.value)},false);
+  $("#shopIn").addEventListener("keydown",function(e){if(e.keyCode===13){addShop(e.target.value);e.target.value=""}},false);
+  $("#diag").innerHTML="動作確認 OK ／ 家事 "+CHORES.length+"件・料理 "+RECIPES.length+"件・困った "+TROUBLE.length+"件 読み込み済み";
+}catch(err){ showErr(err.message||String(err)); }
 </script>
 </body>
 </html>
